@@ -10,3 +10,5 @@ env/
 build/
 .env
 *.png
+*.html
+*.parquet
