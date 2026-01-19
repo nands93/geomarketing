@@ -5,8 +5,9 @@ import os
 
 # --- CONFIGURAÇÃO ---
 ARQUIVO_MAPA = "./dados_processados/setores_RJ_2022.parquet"
-# Confirme se este é o nome exato do seu CSV baixado
 ARQUIVO_DADOS = "./dados_brutos/Agregados_por_setores_renda_responsavel_BR.csv" 
+# IMPORTANTE: Se o seu arquivo CSV for o do Brasil, ele vai funcionar igual, 
+# desde que a variável ARQUIVO_DADOS aponte para ele.
 
 def gerar_mapa_final():
     print("--- Iniciando Processamento de Geomarketing ---")
@@ -17,20 +18,29 @@ def gerar_mapa_final():
         raise FileNotFoundError("Arquivo de mapa não encontrado.")
     
     gdf = gpd.read_parquet(ARQUIVO_MAPA)
+    
+    # --- FAXINA NO CÓDIGO DO MAPA (CORREÇÃO DO .0) ---
+    print("   > Normalizando códigos dos setores no mapa...")
     gdf['code_tract'] = gdf['code_tract'].astype(str)
+    # Remove o ".0" do final se existir
+    gdf['code_tract'] = gdf['code_tract'].str.replace(r'\.0$', '', regex=True)
     
     # 2. Carregar Dados de Renda
     print(f"2. Carregando dados de Renda: {ARQUIVO_DADOS}")
     if not os.path.exists(ARQUIVO_DADOS):
         raise FileNotFoundError(f"Arquivo CSV não encontrado: {ARQUIVO_DADOS}")
     
-    # Lê o CSV
+    # dtype={'CD_SETOR': str} força o Pandas a ler como texto puro, evitando erros
     df = pd.read_csv(ARQUIVO_DADOS, sep=';', encoding='utf-8', dtype={'CD_SETOR': str})
     
     # Renomeia
     df = df.rename(columns={'CD_SETOR': 'code_tract', 'V06004': 'renda_media'})
     
-    # --- TRATAMENTO DE DADOS (O FIX DO 'X') ---
+    # --- FAXINA NO CÓDIGO DA PLANILHA ---
+    # Só por garantia, removemos .0 da planilha também, caso exista
+    df['code_tract'] = df['code_tract'].astype(str).str.replace(r'\.0$', '', regex=True)
+    
+    # --- TRATAMENTO DOS VALORES DE RENDA ---
     print("   > Tratando dados ocultos e convertendo valores...")
     df['renda_media'] = df['renda_media'].astype(str).str.replace(',', '.', regex=False)
     df['renda_media'] = pd.to_numeric(df['renda_media'], errors='coerce')
@@ -42,14 +52,22 @@ def gerar_mapa_final():
     # Remove vazios
     gdf_final = gdf_final.dropna(subset=['renda_media'])
     
-    # VERIFICAÇÃO DE SEGURANÇA (Para não dar erro em mapa vazio)
+    # VERIFICAÇÃO FINAL
     if gdf_final.empty:
-        print("❌ ERRO: O cruzamento gerou um mapa vazio. Verifique se os códigos dos setores (CD_SETOR) batem entre o CSV e o Mapa.")
+        print(f"❌ ERRO CRÍTICO: O mapa continua vazio.")
+        print(f"   Exemplo Mapa (RJ): '{gdf['code_tract'].iloc[0]}'")
+        # Tenta achar o RJ no dataframe para provar que existe
+        exemplo_rj = df[df['code_tract'].str.startswith('33')]
+        if not exemplo_rj.empty:
+            print(f"   Exemplo Planilha (RJ): '{exemplo_rj['code_tract'].iloc[0]}'")
+        else:
+            print("   O CSV não parece ter dados do Rio de Janeiro (começando com 33). Verifique se baixou o arquivo certo.")
         return
 
-    # --- CORREÇÃO DO ERRO DE ASPECTO ---
-    print("   > Projetando para Web Mercator (EPSG:3857) para corrigir erro visual...")
-    # Isso transforma Lat/Long em Metros, resolvendo o problema do matplotlib
+    print(f"   ✅ Cruzamento OK! {len(gdf_final)} setores com renda identificados.")
+
+    # --- PROJEÇÃO PARA CORRIGIR ERRO VISUAL ---
+    print("   > Projetando para Web Mercator (EPSG:3857)...")
     gdf_final = gdf_final.to_crs(epsg=3857)
 
     # 4. Gerar o Mapa
@@ -72,7 +90,7 @@ def gerar_mapa_final():
     
     OUTPUT_IMG = "mapa_final_renda.png"
     plt.savefig(OUTPUT_IMG, dpi=300, bbox_inches='tight')
-    print(f"✅ SUCESSO! O arquivo '{OUTPUT_IMG}' foi gerado na sua pasta.")
+    print(f"✅ SUCESSO ABSOLUTO! O arquivo '{OUTPUT_IMG}' foi gerado.")
 
 if __name__ == "__main__":
     gerar_mapa_final()
