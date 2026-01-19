@@ -1,0 +1,10 @@
+/venv
+/dados_processados
+/__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+build/
+.env
