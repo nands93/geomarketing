@@ -1,5 +1,6 @@
 /venv
 /dados_processados
+/dados_brutos
 /__pycache__
 *.pyc
 *.pyo
