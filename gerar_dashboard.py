@@ -31,7 +31,7 @@ def gerar_dashboard(arquivo_mapa, arquivo_dados):
         return
     
     NOME_PALETA = "Spectral_r"
-    NUM_CLASSES = 5
+    NUM_CLASSES = 8
     
     cmap = plt.get_cmap(NOME_PALETA, NUM_CLASSES)
     cores_hex = [mcolors.to_hex(cmap(i)) for i in range(NUM_CLASSES)]
