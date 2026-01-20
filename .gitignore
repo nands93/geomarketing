@@ -1,4 +1,8 @@
 /venv
+etl/venv
+etl/__pycache__
+etl/*.pyc
+etl/dados_processados
 /dados_processados
 /dados_brutos
 /__pycache__
