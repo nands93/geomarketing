@@ -1,7 +1,6 @@
 import pandas as pd
 import geopandas as gpd
 
-# CONFIGURAÇÃO (Use os mesmos caminhos do script anterior)
 ARQUIVO_MAPA = "./dados_processados/setores_RJ_2022.parquet"
 ARQUIVO_DADOS = "./dados_brutos/Agregados_por_setores_renda_responsavel_BR.csv" 
 
