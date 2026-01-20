@@ -2,13 +2,13 @@ import pandas as pd
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import os
+from pathlib import Path
 
 def gerar_mapa_final(arquivo_mapa, arquivo_dados):
     print("--- Iniciando Processamento de Geomarketing ---")
     
-    # 1. Carregar Geometria
     print(f"1. Carregando mapa digital: {arquivo_mapa}")
-    if not os.path.exists(arquivo_mapa):
+    if not arquivo_mapa.exists():
         raise FileNotFoundError("Arquivo de mapa não encontrado.")
     
     gdf = gpd.read_parquet(arquivo_mapa)
@@ -18,7 +18,7 @@ def gerar_mapa_final(arquivo_mapa, arquivo_dados):
     gdf['code_tract'] = gdf['code_tract'].str.replace(r'\.0$', '', regex=True)
     
     print(f"2. Carregando dados de Renda: {arquivo_dados}")
-    if not os.path.exists(arquivo_dados):
+    if not arquivo_dados.exists():
         raise FileNotFoundError(f"Arquivo CSV não encontrado: {arquivo_dados}")
     
     df = pd.read_csv(arquivo_dados, sep=';', encoding='utf-8', dtype={'CD_SETOR': str})

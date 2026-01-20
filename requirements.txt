@@ -1,0 +1,6 @@
+geobr
+geopandas
+pandas
+matplotlib
+folium
+pathlib

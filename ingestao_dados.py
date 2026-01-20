@@ -17,7 +17,7 @@ def baixar_malha_setores(estado_alvo, ano_censo):
         return None
 
 def salvar_localmente(gdf, estado_alvo, ano_censo, output_dir):
-    caminho_arquivo = f"{output_dir}/setores_{estado_alvo}_{ano_censo}.parquet"
+    caminho_arquivo = output_dir / f"setores_{estado_alvo}_{ano_censo}.parquet"
     
     print(f"Salvando dados em: {caminho_arquivo}...")
     
@@ -35,8 +35,8 @@ def gerar_visualizacao_teste(gdf, estado_alvo, ano_censo, output_dir):
     print("Mapa de verificação salvo na pasta.")
 
 def ingestao_dados(output_dir, estado_alvo, ano_censo):
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    if not output_dir.exists():
+        output_dir.mkdir(parents=True, exist_ok=True)
     gdf = baixar_malha_setores(estado_alvo, ano_censo)
     
     if gdf is not None:
