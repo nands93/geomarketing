@@ -3,20 +3,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
-# Configuração
-ESTADO_ALVO = 'RJ' # Vamos começar pelo Rio de Janeiro como exemplo
-ANO_CENSO = 2022
-OUTPUT_DIR = './dados_processados'
-
-if not os.path.exists(OUTPUT_DIR):
-    os.makedirs(OUTPUT_DIR)
-
-def baixar_malha_setores():
-    print(f"--- Iniciando download da Malha de Setores Censitários ({ESTADO_ALVO}) ---")
+def baixar_malha_setores(estado_alvo, ano_censo):
+    print(f"--- Iniciando download da Malha de Setores Censitários ({estado_alvo}) ---")
     
     # read_census_tract: baixa a geometria (o polígono do setor)
     try:
-        gdf_setores = geobr.read_census_tract(code_tract=ESTADO_ALVO, year=ANO_CENSO)
+        gdf_setores = geobr.read_census_tract(code_tract=estado_alvo, year=ano_censo)
         
         print(f"Download concluído! Total de setores encontrados: {len(gdf_setores)}")
         return gdf_setores
@@ -24,8 +16,8 @@ def baixar_malha_setores():
         print(f"Erro ao baixar dados: {e}")
         return None
 
-def salvar_localmente(gdf):
-    caminho_arquivo = f"{OUTPUT_DIR}/setores_{ESTADO_ALVO}_{ANO_CENSO}.parquet"
+def salvar_localmente(gdf, estado_alvo, ano_censo, output_dir):
+    caminho_arquivo = f"{output_dir}/setores_{estado_alvo}_{ano_censo}.parquet"
     
     print(f"Salvando dados em: {caminho_arquivo}...")
     
@@ -33,22 +25,22 @@ def salvar_localmente(gdf):
     print("Salvo com sucesso!")
     return caminho_arquivo
 
-def gerar_visualizacao_teste(gdf):
+def gerar_visualizacao_teste(gdf, estado_alvo, ano_censo, output_dir):
     print("Gerando mapa de verificação...")
     f, ax = plt.subplots(figsize=(10, 10))
     gdf.plot(ax=ax, edgecolor='gray', linewidth=0.1, alpha=0.5)
-    ax.set_title(f"Malha de Setores Censitários - {ESTADO_ALVO} ({ANO_CENSO})")
+    ax.set_title(f"Malha de Setores Censitários - {estado_alvo} ({ano_censo})")
     ax.set_axis_off()
-    plt.savefig(f"{OUTPUT_DIR}/mapa_verificacao.png", dpi=150)
+    plt.savefig(f"{output_dir}/mapa_verificacao.png", dpi=150)
     print("Mapa de verificação salvo na pasta.")
 
-if __name__ == "__main__":
-    gdf = baixar_malha_setores()
+def ingestao_dados(output_dir, estado_alvo, ano_censo):
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    gdf = baixar_malha_setores(estado_alvo, ano_censo)
     
     if gdf is not None:
-        arquivo = salvar_localmente(gdf)
-        
-        gerar_visualizacao_teste(gdf)
-        
+        arquivo = salvar_localmente(gdf, estado_alvo, ano_censo, output_dir)
+        gerar_visualizacao_teste(gdf, estado_alvo, ano_censo, output_dir)
         print("\n--- Processo Finalizado ---")
-        print("Próximo passo: Cruzar o 'code_tract' (CD_SETOR) com a tabela de renda do IBGE.")
+        return arquivo
