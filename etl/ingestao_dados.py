@@ -17,8 +17,8 @@ def baixar_malha_setores(estado_alvo, ano_censo):
         print(f"Erro ao baixar dados: {e}")
         return None
 
-def salvar_localmente(gdf, estado_alvo, ano_censo, output_dir):
-    caminho_arquivo = f"../dados_processados/setores_{estado_alvo}_{ano_censo}.parquet"
+def salvar_localmente(gdf):
+    caminho_arquivo = f"../dados_processados/setores_com_renda.parquet"
     
     print(f"Salvando dados em: {caminho_arquivo}...")
     
@@ -41,7 +41,7 @@ def ingestao_dados(output_dir, estado_alvo, ano_censo):
     gdf = baixar_malha_setores(estado_alvo, ano_censo)
     
     if gdf is not None:
-        arquivo = salvar_localmente(gdf, estado_alvo, ano_censo, output_dir)
+        arquivo = salvar_localmente(gdf)
         gerar_visualizacao_teste(gdf, estado_alvo, ano_censo, output_dir)
         print("\n--- Processo Finalizado ---")
         return arquivo
