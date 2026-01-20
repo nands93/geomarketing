@@ -2,6 +2,7 @@ import geobr
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+from pathlib import Path
 
 def baixar_malha_setores(estado_alvo, ano_censo):
     print(f"--- Iniciando download da Malha de Setores Censitários ({estado_alvo}) ---")
@@ -17,13 +18,13 @@ def baixar_malha_setores(estado_alvo, ano_censo):
         return None
 
 def salvar_localmente(gdf, estado_alvo, ano_censo, output_dir):
-    caminho_arquivo = output_dir / f"setores_{estado_alvo}_{ano_censo}.parquet"
+    caminho_arquivo = f"../dados_processados/setores_{estado_alvo}_{ano_censo}.parquet"
     
     print(f"Salvando dados em: {caminho_arquivo}...")
     
     gdf.to_parquet(caminho_arquivo)
     print("Salvo com sucesso!")
-    return caminho_arquivo
+    return Path(caminho_arquivo)
 
 def gerar_visualizacao_teste(gdf, estado_alvo, ano_censo, output_dir):
     print("Gerando mapa de verificação...")

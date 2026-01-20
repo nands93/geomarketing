@@ -1,7 +1,6 @@
 import pandas as pd
 import geopandas as gpd
 import matplotlib.pyplot as plt
-import os
 from pathlib import Path
 
 def gerar_mapa_final(arquivo_mapa, arquivo_dados):

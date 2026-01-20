@@ -1,8 +1,8 @@
 import ingestao_dados
 import debug_chaves
-import etl.analise_renda as analise_renda
+import analise_renda
 import gerar_dashboard 
-from etl.config import ESTADO_ALVO, ANO_CENSO, OUTPUT_DIR, ARQUIVO_DADOS
+from config import ESTADO_ALVO, ANO_CENSO, OUTPUT_DIR, ARQUIVO_DADOS
 
 def main():
     arquivo_mapa = ingestao_dados.ingestao_dados(OUTPUT_DIR, ESTADO_ALVO, ANO_CENSO)
