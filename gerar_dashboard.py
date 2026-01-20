@@ -24,7 +24,7 @@ def gerar_dashboard(arquivo_mapa, arquivo_dados):
         column="renda_media", # A coluna que vai colorir o mapa
         cmap="RdPu_r",    # Paleta de cores
         scheme="quantiles",   # Divisão estatística
-        k=5,                  # 5 faixas de renda
+        k=7,                  # 7 faixas de renda
         legend=True,
         tooltip=["code_tract", "renda_media"], # O que aparece quando passa o mouse
         popup=["code_tract", "renda_media"],   # O que aparece quando clica
