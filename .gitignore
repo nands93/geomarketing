@@ -1,19 +1,19 @@
-/venv
-etl/venv
-etl/__pycache__
-etl/*.pyc
-etl/dados_processados
-/dados_processados
-/dados_brutos
-/__pycache__
+# Dados brutos e processados — pesados demais para o repo
+dados_brutos/
+dados_processados/
+
+# Arquivos gerados
+*.html
+*.png
+__pycache__/
 *.pyc
 *.pyo
-*.pyd
-.Python
-env/
-build/
+
+# Ambiente Python
 .env
-*.png
-*.html
-*.parquet
-/etl/cache
+venv/
+.venv/
+
+# OS
+.DS_Store
+etl/cache

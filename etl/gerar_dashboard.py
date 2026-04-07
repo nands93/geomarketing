@@ -1,8 +1,8 @@
 import geopandas as gpd
 import pandas as pd
-import folium
 from folium import Element
 import matplotlib.colors as mcolors
+import matplotlib.pyplot as plt
 import mapclassify
 import numpy as np
 import os

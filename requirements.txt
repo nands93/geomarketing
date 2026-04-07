@@ -1,10 +1,28 @@
-fastapi
-uvicorn
-osmnx
-geopandas
-pandas
-matplotlib
-folium
-pathlib
-mapclassify
-pyarrow
+# Geoespacial
+geobr==0.2.2
+geopandas==1.1.0
+shapely==2.1.0
+pyarrow==23.0.1
+mapclassify==2.10.0
+rtree==1.4.1
+
+# Dados
+pandas==3.0.1
+numpy==2.4.3
+
+# API
+fastapi==0.135.1
+uvicorn==0.42.0
+httpx==0.28.1          # chamadas async para ViaCEP e Nominatim
+
+# Cache
+redis==7.3.0
+
+# Visualização (ETL only — não necessário no container da API)
+folium==0.20.0
+matplotlib==3.10.8
+osmnx==2.1.0
+
+# Utils
+numba==0.64.0
+pytest==9.0.2
