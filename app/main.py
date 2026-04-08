@@ -246,12 +246,12 @@ async def consultar_cep(cep: str):
     socioeconômicos do setor censitário correspondente.
     Cache Redis de 30 dias para geocoding.
     """
-    if gdf_setores is None:
-        raise HTTPException(status_code=503, detail="Base de setores não carregada.")
-
     cep_limpo = _limpar_cep(cep)
     if len(cep_limpo) != 8:
         raise HTTPException(status_code=422, detail="CEP inválido. Use 8 dígitos.")
+
+    if gdf_setores is None:
+        raise HTTPException(status_code=503, detail="Base de setores não carregada.")
 
     # Geocoding (com cache)
     geo = await _geocodificar_cep(cep_limpo)
