@@ -17,3 +17,15 @@ venv/
 # OS
 .DS_Store
 etl/cache
+
+frontend/node_modules/
+.next
+frontend/out/
+frontend/.vercel/
+frontend/.env*
+frontend/.tsbuildinfo
+next-env.d.ts
+frontend/npm-debug.log
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnpm-debug.log*
