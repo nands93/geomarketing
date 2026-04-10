@@ -4,29 +4,28 @@ import pandas as pd
 import os
 import warnings
 
-# Ignorar avisos
 warnings.filterwarnings('ignore')
 
-# --- CONFIGURAÇÃO ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # 1. ARQUIVOS (Certifique-se que o CSV do BR está na pasta correta)
-ARQUIVO_MAPA = os.path.join(BASE_DIR, "dados_processados", "setores_RJ_2022.parquet")
+ARQUIVO_MAPA = os.path.join(BASE_DIR, "dados_processados", "setores_{estado}_2022.parquet")
 ARQUIVO_DADOS = os.path.join(BASE_DIR, "dados_brutos", "Agregados_por_setores_renda_responsavel_BR.csv")
 
 # 2. SAÍDA
-ARQUIVO_SAIDA = os.path.join(BASE_DIR, "dados_processados", "ruas_rj_com_renda.parquet")
+ARQUIVO_SAIDA = os.path.join(BASE_DIR, "dados_processados", "ruas_{estado}_com_renda.parquet")
 
 # 3. LOCAL
-LOCAL_ALVO = "Copacabana, Rio de Janeiro, Brazil"
+LOCATIONS_ALVO = {
+    'RJ': "Copacabana, Rio de Janeiro, Brazil",
+    'SP': "Pinheiros, São Paulo, Brazil"  # Example location
+}
 
-def mapear_ruas_ricas():
-    print(f"--- INICIANDO ETL DE RUAS (Base BR) ---")
-    print(f"Local Alvo: {LOCAL_ALVO}")
+def mapear_ruas_ricas(estado):
+    LOCAL_ALVO = LOCATIONS_ALVO[estado]
+    ARQUIVO_MAPA = os.path.join(BASE_DIR, "dados_processados", f"setores_{estado}_2022.parquet")
+    ARQUIVO_SAIDA = os.path.join(BASE_DIR, "dados_processados", f"ruas_{estado}_com_renda.parquet")
 
-    # ==============================================================================
-    # 1. CARREGAR E CRUZAR
-    # ==============================================================================
     print("1. Carregando mapa e cruzando com a base Brasil...")
     
     if not os.path.exists(ARQUIVO_MAPA):
@@ -53,22 +52,17 @@ def mapear_ruas_ricas():
     df_renda = df_renda.rename(columns={'CD_SETOR': 'code_tract', 'V06004': 'renda_media'})
     df_renda['code_tract'] = df_renda['code_tract'].astype(str).str.replace(r'\.0$', '', regex=True)
     
-    # Tratamento numérico
     df_renda['renda_media'] = pd.to_numeric(
         df_renda['renda_media'].astype(str).str.replace(',', '.', regex=False), 
         errors='coerce'
     )
     
-    # C) Cruzamento
     gdf_rico = gdf_setores.merge(df_renda, on='code_tract', how='inner')
     gdf_rico = gdf_rico.dropna(subset=['renda_media'])
     gdf_rico = gdf_rico.to_crs(epsg=3857)
 
     print(f"   > Setores mapeados com renda: {len(gdf_rico)}")
 
-    # ==============================================================================
-    # 2. BAIXAR RUAS (OSM)
-    # ==============================================================================
     print(f"2. Baixando malha viária de '{LOCAL_ALVO}'...")
     try:
         G = ox.graph_from_place(LOCAL_ALVO, network_type='all')
@@ -78,9 +72,6 @@ def mapear_ruas_ricas():
         print(f"❌ Erro ao baixar ruas: {e}")
         return
 
-    # ==============================================================================
-    # 3. SPATIAL JOIN (Agrupamento por Índice)
-    # ==============================================================================
     print("3. Cruzando Ruas com Setores...")
     
     ruas_com_renda = gpd.sjoin(
@@ -96,30 +87,19 @@ def mapear_ruas_ricas():
     ruas_limpas = ruas_com_renda[~ruas_com_renda.index.duplicated(keep='first')].copy()
     ruas_limpas['renda_media'] = medias_por_rua
     
-    # ==============================================================================
-    # 4. SALVAR (COM BLINDAGEM CONTRA LISTAS)
-    # ==============================================================================
     print(f"4. Salvando em: {ARQUIVO_SAIDA}")
     
-    # Seleciona colunas úteis
     cols_to_keep = [c for c in ['name', 'geometry', 'renda_media', 'highway', 'length'] if c in ruas_limpas.columns]
-    ruas_finais = ruas_limpas[cols_to_keep].copy() # .copy() é importante aqui
+    ruas_finais = ruas_limpas[cols_to_keep].copy()
 
-    # --- FIX PARA O ERRO PYARROW (SANITIZAÇÃO) ---
     print("   > Convertendo tipos complexos para texto simples...")
     for col in ruas_finais.columns:
-        # Se a coluna não for geometria e for do tipo 'object' (texto ou lista misturada)
         if col != 'geometry' and ruas_finais[col].dtype == 'object':
-            # Força virar string. Ex: ['Rua A', 'Rua B'] vira "['Rua A', 'Rua B']"
             ruas_finais[col] = ruas_finais[col].astype(str)
-
-    # Agora salva sem medo
+    ruas_finais['estado'] = estado
     ruas_finais.to_parquet(ARQUIVO_SAIDA)
     print("✅ SUCESSO! Base de ruas salva.")
 
-    # ==============================================================================
-    # 5. AMOSTRA
-    # ==============================================================================
     print("\n--- TOP 5 RUAS MAIS RICAS (Amostra) ---")
     if 'name' in ruas_finais.columns:
         ranking = ruas_finais.dropna(subset=['name']).copy()
@@ -128,4 +108,9 @@ def mapear_ruas_ricas():
             print(f"💰 R$ {renda:,.2f} | {rua}")
 
 if __name__ == "__main__":
-    mapear_ruas_ricas()
+    from config import ESTADOS
+    for estado in ESTADOS:
+        print(f"\n{'='*60}")
+        print(f"Processando ruas: {estado}")
+        print(f"{'='*60}")
+        mapear_ruas_ricas(estado)

@@ -50,6 +50,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [resultado, setResultado] = useState<ResultadoCEP | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [selectedState, setSelectedState] = useState("RJ");
 
   async function buscarCEP() {
     const cepLimpo = cep.replace(/\D/g, "");
@@ -63,7 +64,7 @@ export default function Home() {
     setResultado(null);
 
     try {
-      const res = await fetch(`${API_URL}/renda/cep/${cepLimpo}`);
+      const res = await fetch(`${API_URL}/renda/cep/${cepLimpo}?estado=${selectedState}`);
       const data = await res.json();
 
       if (!res.ok) {
@@ -79,8 +80,6 @@ export default function Home() {
       setResultado(data);
     } catch {
       setErro("Não foi possível conectar à API. Verifique se ela está rodando.");
-    } finally {
-      setLoading(false);
     }
   }
 
@@ -105,9 +104,9 @@ export default function Home() {
           <div className="w-7 h-7 rounded bg-[#00e5b0] flex items-center justify-center">
             <MapPin className="w-4 h-4 text-black" />
           </div>
-          <span className="font-semibold tracking-tight text-sm">GeoMarketing RJ</span>
+          <span className="font-semibold tracking-tight text-sm">GeoMarketing</span>
         </div>
-        <span className="text-xs text-white/30">Censo IBGE 2022 · Município do Rio de Janeiro</span>
+        <span className="text-xs text-white/30">Censo IBGE 2022</span>
       </header>
 
       <div className="max-w-6xl mx-auto px-6 py-10 grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -242,6 +241,12 @@ export default function Home() {
           <MapView resultado={mapPoint} />
         </div>
       </div>
+
+      {/* Dropdown para seleção de estado */}
+      <select value={selectedState} onChange={(e) => setSelectedState(e.target.value)}>
+        <option value="RJ">Rio de Janeiro</option>
+        <option value="SP">São Paulo</option>
+      </select>
     </main>
   );
 }

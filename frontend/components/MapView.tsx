@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -18,6 +18,14 @@ export default function MapView({ resultado }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const marker = useRef<maplibregl.Marker | null>(null);
+  type StateCode = 'RJ' | 'SP';
+
+  const STATE_CENTERS: Record<StateCode, [number, number]> = {
+  'RJ': [-43.1729, -22.9068],  // Rio de Janeiro
+  'SP': [-46.6333, -23.5505]   // São Paulo
+};
+
+  const [selectedState, setSelectedState] = useState<StateCode>('RJ');
 
   // Inicializa o mapa uma vez
   useEffect(() => {
@@ -26,7 +34,7 @@ export default function MapView({ resultado }: MapViewProps) {
     map.current = new maplibregl.Map({
       container: mapContainer.current,
       style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
-      center: [-43.1729, -22.9068], // Rio de Janeiro
+      center: STATE_CENTERS[selectedState],
       zoom: 11,
     });
 
