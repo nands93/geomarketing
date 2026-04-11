@@ -198,7 +198,7 @@ async def _geocodificar_cep(cep: str) -> dict:
     return resultado
 
 
-BUFFER_METROS = 200  # raio de busca ao redor do ponto geocodificado
+BUFFER_METROS = 50  # raio de busca ao redor do ponto geocodificado
 
 
 def _consultar_setor(lat: float, lng: float) -> dict | None:
