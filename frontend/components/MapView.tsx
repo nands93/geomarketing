@@ -1,40 +1,36 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
-interface SetorGeo {
+export interface MapPoint {
   latitude: number;
   longitude: number;
-  setor_censitario?: string;
+  estado?: string;
+  geojson?: object;
 }
 
 interface MapViewProps {
-  resultado: SetorGeo | null;
+  resultado: MapPoint | null;
 }
+
+const LAYER_FILL = "setor-fill";
+const LAYER_LINE = "setor-line";
+const SOURCE_ID  = "setor";
 
 export default function MapView({ resultado }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<maplibregl.Map | null>(null);
-  const marker = useRef<maplibregl.Marker | null>(null);
-  type StateCode = 'RJ' | 'SP';
+  const map          = useRef<maplibregl.Map | null>(null);
 
-  const STATE_CENTERS: Record<StateCode, [number, number]> = {
-  'RJ': [-43.1729, -22.9068],  // Rio de Janeiro
-  'SP': [-46.6333, -23.5505]   // São Paulo
-};
-
-  const [selectedState, setSelectedState] = useState<StateCode>('RJ');
-
-  // Inicializa o mapa uma vez
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
 
     map.current = new maplibregl.Map({
       container: mapContainer.current,
-      style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
-      center: STATE_CENTERS[selectedState],
+      // Estilo claro para combinar com o design system
+      style: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+      center: [-43.1729, -22.9068],
       zoom: 11,
     });
 
@@ -46,41 +42,44 @@ export default function MapView({ resultado }: MapViewProps) {
     };
   }, []);
 
-  // Atualiza o marcador quando chega um resultado
   useEffect(() => {
-    if (!map.current || !resultado) return;
+    const m = map.current;
+    if (!m || !resultado) return;
 
-    // Remove marcador anterior
-    marker.current?.remove();
+    m.flyTo({ center: [resultado.longitude, resultado.latitude], zoom: 14, duration: 1000 });
 
-    // Cria novo marcador
-    const el = document.createElement("div");
-    el.style.cssText = `
-      width: 16px;
-      height: 16px;
-      background: #00e5b0;
-      border: 2px solid #fff;
-      border-radius: 50%;
-      box-shadow: 0 0 12px #00e5b0;
-    `;
+    if (!resultado.geojson) return;
 
-    marker.current = new maplibregl.Marker({ element: el })
-      .setLngLat([resultado.longitude, resultado.latitude])
-      .addTo(map.current);
+    const addLayers = () => {
+      if (m.getLayer(LAYER_FILL)) m.removeLayer(LAYER_FILL);
+      if (m.getLayer(LAYER_LINE)) m.removeLayer(LAYER_LINE);
+      if (m.getSource(SOURCE_ID)) m.removeSource(SOURCE_ID);
 
-    // Voa para o ponto
-    map.current.flyTo({
-      center: [resultado.longitude, resultado.latitude],
-      zoom: 14,
-      duration: 1200,
-    });
+      m.addSource(SOURCE_ID, {
+        type: "geojson",
+        data: resultado.geojson as GeoJSON.FeatureCollection,
+      });
+
+      m.addLayer({
+        id: LAYER_FILL,
+        type: "fill",
+        source: SOURCE_ID,
+        paint: { "fill-color": "#00e5b0", "fill-opacity": 0.18 },
+      });
+
+      m.addLayer({
+        id: LAYER_LINE,
+        type: "line",
+        source: SOURCE_ID,
+        paint: { "line-color": "#00c49a", "line-width": 2, "line-opacity": 1 },
+      });
+    };
+
+    if (m.isStyleLoaded()) addLayers();
+    else m.once("styledata", addLayers);
   }, [resultado]);
 
   return (
-    <div
-      ref={mapContainer}
-      className="w-full h-full rounded-lg overflow-hidden"
-      style={{ minHeight: "400px" }}
-    />
+    <div ref={mapContainer} style={{ width: "100%", height: "100%" }} />
   );
 }

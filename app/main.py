@@ -36,6 +36,7 @@ async def lifespan(app: FastAPI):
 
     print(f"⏳ Iniciando API... Raiz do projeto: {BASE_DIR}")
 
+    # Redis
     try:
         redis_client = redis.from_url(REDIS_URL, decode_responses=True)
         redis_client.ping()
@@ -44,6 +45,7 @@ async def lifespan(app: FastAPI):
         print(f"   ⚠️ Redis indisponível — geocoding sem cache: {e}")
         redis_client = None
 
+    # Setores censitários
     if os.path.exists(ARQUIVO_SETORES):
         try:
             gdf_setores = gpd.read_parquet(ARQUIVO_SETORES)
@@ -66,8 +68,13 @@ async def lifespan(app: FastAPI):
         print(f"   ⚠️ Arquivo de ruas não encontrado: {ARQUIVO_RUAS}")
 
     print("🚀 API Online!")
-    yield
+    yield  # A API roda aqui
     print("🛑 Encerrando API.")
+
+
+# ==============================================================================
+# APP
+# ==============================================================================
 
 app = FastAPI(
     title="GeoMarketing RJ",
@@ -75,6 +82,11 @@ app = FastAPI(
     description="Inteligência geoespacial socioeconômica para o município do Rio de Janeiro.",
     lifespan=lifespan,
 )
+
+
+# ==============================================================================
+# HELPERS
+# ==============================================================================
 
 def _limpar_cep(cep: str) -> str:
     """Remove traços e espaços do CEP."""
@@ -132,6 +144,7 @@ async def _geocodificar_cep(cep: str) -> dict:
 
     async with httpx.AsyncClient(timeout=10.0) as client:
 
+        # 2. ViaCEP → endereço
         try:
             resp = await client.get(f"https://viacep.com.br/ws/{cep}/json/")
             resp.raise_for_status()
@@ -185,17 +198,14 @@ async def _geocodificar_cep(cep: str) -> dict:
     return resultado
 
 
-def _consultar_setor(lat: float, lng: float, estado: str = None) -> dict:
-    """Point-in-polygon: retorna dados do setor censitário para um ponto."""
+BUFFER_METROS = 200  # raio de busca ao redor do ponto geocodificado
+
+
+def _consultar_setor(lat: float, lng: float) -> dict | None:
+    """Point-in-polygon simples — usado pelo endpoint /renda/ponto."""
     ponto = gpd.GeoDataFrame(geometry=[Point(lng, lat)], crs="EPSG:4326")
     ponto = ponto.to_crs(gdf_setores.crs)
-    
-    # Filter by state if provided
-    setores_filtrados = gdf_setores
-    if estado:
-        setores_filtrados = gdf_setores[gdf_setores['estado'] == estado]
-    
-    resultado = gpd.sjoin(ponto, setores_filtrados, how="left", predicate="within")
+    resultado = gpd.sjoin(ponto, gdf_setores, how="left", predicate="within")
 
     if resultado.empty or pd.isna(resultado.iloc[0]["renda_media"]):
         return None
@@ -209,12 +219,56 @@ def _consultar_setor(lat: float, lng: float, estado: str = None) -> dict:
         "classe_social_estimada": _classificar_renda(renda),
     }
 
+
+def _consultar_setores_por_buffer(lat: float, lng: float) -> list[dict]:
+    """
+    Retorna todos os setores censitários num raio de BUFFER_METROS ao redor do ponto.
+    Resolve o caso de CEPs que cobrem múltiplos setores (ex: ruas longas).
+    """
+    ponto = gpd.GeoDataFrame(geometry=[Point(lng, lat)], crs="EPSG:4326")
+    ponto = ponto.to_crs(gdf_setores.crs)
+
+    # Buffer em metros (CRS 3857 usa metros)
+    buffer = gpd.GeoDataFrame(geometry=ponto.buffer(BUFFER_METROS), crs=gdf_setores.crs)
+
+    resultado = gpd.sjoin(buffer, gdf_setores, how="left", predicate="intersects")
+    resultado = resultado.dropna(subset=["renda_media"])
+
+    if resultado.empty:
+        return []
+
+    setores = []
+    for _, dado in resultado.iterrows():
+        renda = float(dado["renda_media"])
+        setores.append({
+            "setor_censitario": str(dado["code_tract"]),
+            "renda_media": round(renda, 2),
+            "classe_social_estimada": _classificar_renda(renda),
+        })
+
+    return setores
+
+
+def _setores_para_geojson(code_tracts: list[str]) -> dict:
+    """
+    Retorna um GeoJSON FeatureCollection com os polígonos de todos os setores
+    informados. Reprojetado para EPSG:4326 para uso direto no MapLibre.
+    """
+    filtro = gdf_setores[gdf_setores["code_tract"].isin(code_tracts)]
+    if filtro.empty:
+        return {"type": "FeatureCollection", "features": []}
+    return json.loads(filtro.to_crs(epsg=4326).to_json())
+
+
+# ==============================================================================
+# ENDPOINTS
+# ==============================================================================
+
 @app.get("/", summary="Status da API")
 def home():
     return {
         "status": "online",
-        "versao": "3.0",
-        "municipio": "Rio de Janeiro",
+        "versao": "3.2",
         "dados": {
             "setores": len(gdf_setores) if gdf_setores is not None else 0,
             "ruas": len(gdf_ruas) if gdf_ruas is not None else 0,
@@ -228,10 +282,11 @@ def home():
 
 
 @app.get("/renda/cep/{cep}", summary="Consulta renda por CEP")
-async def consultar_cep(cep: str, estado: str = None):
+async def consultar_cep(cep: str):
     """
     Recebe um CEP (com ou sem traço), geocodifica e retorna os dados
-    socioeconômicos do setor censitário correspondente.
+    socioeconômicos de todos os setores censitários num raio de 200m.
+    Inclui o GeoJSON dos polígonos para renderização direta no mapa.
     Cache Redis de 30 dias para geocoding.
     """
     cep_limpo = _limpar_cep(cep)
@@ -244,27 +299,40 @@ async def consultar_cep(cep: str, estado: str = None):
     # Geocoding (com cache)
     geo = await _geocodificar_cep(cep_limpo)
 
-    # Point-in-polygon with state filter
-    setor = _consultar_setor(geo["latitude"], geo["longitude"], estado)
-    if setor is None:
+    # Busca todos os setores no raio
+    setores = _consultar_setores_por_buffer(geo["latitude"], geo["longitude"])
+
+    if not setores:
         return {
             "cep": cep_limpo,
             "endereco": geo,
             "mensagem": "Endereço fora da área mapeada ou sem dados censitários.",
         }
 
+    rendas = [s["renda_media"] for s in setores]
+    code_tracts = [s["setor_censitario"] for s in setores]
+
     return {
-    "cep": cep_limpo,
-    "endereco": {
-        "logradouro": geo["logradouro"],
-        "bairro": geo["bairro"],
-        "cidade": geo["cidade"],
-        "latitude": geo["latitude"],
-        "longitude": geo["longitude"],
-    },
-    "dados_censitarios": setor,
-    "fonte_geocoding": geo["fonte"],
-}
+        "cep": cep_limpo,
+        "endereco": {
+            "logradouro": geo["logradouro"],
+            "bairro":     geo["bairro"],
+            "cidade":     geo["cidade"],
+            "estado":     geo["estado"],
+            "latitude":   geo["latitude"],
+            "longitude":  geo["longitude"],
+        },
+        "resumo": {
+            "total_setores":           len(setores),
+            "renda_media_minima":      round(min(rendas), 2),
+            "renda_media_maxima":      round(max(rendas), 2),
+            "renda_media_area":        round(sum(rendas) / len(rendas), 2),
+            "classe_predominante":     _classificar_renda(sum(rendas) / len(rendas)),
+        },
+        "setores":  setores,
+        "geojson":  _setores_para_geojson(code_tracts),
+        "fonte_geocoding": geo["fonte"],
+    }
 
 
 @app.get("/renda/ponto/{lat}/{lng}", summary="Consulta renda por coordenadas")
@@ -287,20 +355,14 @@ def consultar_ponto(lat: float, lng: float):
 
 
 @app.get("/ruas/melhores", summary="Ranking de ruas por renda mínima")
-def recomendar_ruas(renda_minima: float = 5000, top: int = 10, estado: str = None):
+def recomendar_ruas(renda_minima: float = 5000, top: int = 10):
     """
     Lista as ruas com renda média acima do valor informado, ordenadas pela maior renda.
-    Opcionalmente filtra por estado (RJ, SP).
     """
     if gdf_ruas is None:
         raise HTTPException(status_code=503, detail="Base de ruas não carregada.")
 
-    # Filter by state if provided
-    ruas_filtradas = gdf_ruas
-    if estado:
-        ruas_filtradas = gdf_ruas[gdf_ruas['estado'] == estado]
-
-    filtro = ruas_filtradas[ruas_filtradas["renda_media"] >= renda_minima].copy()
+    filtro = gdf_ruas[gdf_ruas["renda_media"] >= renda_minima].copy()
 
     if filtro.empty:
         return {"msg": f"Nenhuma rua encontrada com renda acima de R$ {renda_minima:.2f}"}
@@ -324,13 +386,3 @@ def recomendar_ruas(renda_minima: float = 5000, top: int = 10, estado: str = Non
             if rua != "nan"
         ],
     }
-
-
-@app.get("/setores")
-async def get_setores_por_estado(estado: str = None):
-    """Get census sectors, optionally filtered by state (RJ, SP)"""
-    global gdf_setores
-    
-    if estado:
-        return gdf_setores[gdf_setores['estado'] == estado].to_json()
-    return gdf_setores.to_json()  # Returns both states
