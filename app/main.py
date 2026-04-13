@@ -9,22 +9,12 @@ import json
 import os
 import re
 
-# ==============================================================================
-# CONFIGURAÇÃO
-# ==============================================================================
-
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIR_DADOS = os.path.join(BASE_DIR, "dados_processados")
-
 ARQUIVO_SETORES = os.path.join(DIR_DADOS, "setores_com_renda.parquet")
 ARQUIVO_RUAS    = os.path.join(DIR_DADOS, "ruas_rj_com_renda.parquet")
-
 REDIS_URL       = os.getenv("REDIS_URL", "redis://localhost:6379")
 REDIS_TTL_DIAS  = 30  # CEPs ficam em cache por 30 dias
-
-# ==============================================================================
-# LIFESPAN — carrega dados UMA vez na inicialização (modo correto no FastAPI moderno)
-# ==============================================================================
 
 gdf_setores = None
 gdf_ruas    = None
@@ -36,7 +26,6 @@ async def lifespan(app: FastAPI):
 
     print(f"⏳ Iniciando API... Raiz do projeto: {BASE_DIR}")
 
-    # Redis
     try:
         redis_client = redis.from_url(REDIS_URL, decode_responses=True)
         redis_client.ping()
@@ -45,7 +34,6 @@ async def lifespan(app: FastAPI):
         print(f"   ⚠️ Redis indisponível — geocoding sem cache: {e}")
         redis_client = None
 
-    # Setores censitários
     if os.path.exists(ARQUIVO_SETORES):
         try:
             gdf_setores = gpd.read_parquet(ARQUIVO_SETORES)
@@ -71,22 +59,12 @@ async def lifespan(app: FastAPI):
     yield  # A API roda aqui
     print("🛑 Encerrando API.")
 
-
-# ==============================================================================
-# APP
-# ==============================================================================
-
 app = FastAPI(
-    title="GeoMarketing RJ",
+    title="GeoMarketing API",
     version="3.0",
-    description="Inteligência geoespacial socioeconômica para o município do Rio de Janeiro.",
+    description="Inteligência geoespacial socioeconômica.",
     lifespan=lifespan,
 )
-
-
-# ==============================================================================
-# HELPERS
-# ==============================================================================
 
 def _limpar_cep(cep: str) -> str:
     """Remove traços e espaços do CEP."""
@@ -136,7 +114,6 @@ async def _geocodificar_cep(cep: str) -> dict:
     Converte CEP em coordenadas geográficas.
     Fluxo: Cache Redis → ViaCEP (endereço) → Nominatim (lat/lng)
     """
-    # 1. Cache
     cache = _buscar_coordenadas_cache(cep)
     if cache:
         cache["fonte"] = "cache"
@@ -144,7 +121,6 @@ async def _geocodificar_cep(cep: str) -> dict:
 
     async with httpx.AsyncClient(timeout=10.0) as client:
 
-        # 2. ViaCEP → endereço
         try:
             resp = await client.get(f"https://viacep.com.br/ws/{cep}/json/")
             resp.raise_for_status()
@@ -160,7 +136,6 @@ async def _geocodificar_cep(cep: str) -> dict:
         cidade     = dados_cep.get("localidade", "Rio de Janeiro")
         estado     = dados_cep.get("uf", "RJ")
 
-        # 3. Nominatim → lat/lng
         query = f"{logradouro}, {bairro}, {cidade}, {estado}, Brasil"
         headers = {"User-Agent": "geomarketing-rj/3.0"}
         try:
@@ -227,10 +202,7 @@ def _consultar_setores_por_buffer(lat: float, lng: float) -> list[dict]:
     """
     ponto = gpd.GeoDataFrame(geometry=[Point(lng, lat)], crs="EPSG:4326")
     ponto = ponto.to_crs(gdf_setores.crs)
-
-    # Buffer em metros (CRS 3857 usa metros)
     buffer = gpd.GeoDataFrame(geometry=ponto.buffer(BUFFER_METROS), crs=gdf_setores.crs)
-
     resultado = gpd.sjoin(buffer, gdf_setores, how="left", predicate="intersects")
     resultado = resultado.dropna(subset=["renda_media"])
 
@@ -259,10 +231,7 @@ def _setores_para_geojson(code_tracts: list[str]) -> dict:
         return {"type": "FeatureCollection", "features": []}
     return json.loads(filtro.to_crs(epsg=4326).to_json())
 
-
-# ==============================================================================
 # ENDPOINTS
-# ==============================================================================
 
 @app.get("/", summary="Status da API")
 def home():
