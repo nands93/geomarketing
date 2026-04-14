@@ -2,19 +2,30 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 import geopandas as gpd
 import pandas as pd
-from shapely.geometry import Point
+import statistics
+from shapely.geometry import Point, shape
 import httpx
 import redis
 import json
 import os
 import re
 
+# ==============================================================================
+# CONFIGURAÇÃO
+# ==============================================================================
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIR_DADOS = os.path.join(BASE_DIR, "dados_processados")
+
 ARQUIVO_SETORES = os.path.join(DIR_DADOS, "setores_com_renda.parquet")
 ARQUIVO_RUAS    = os.path.join(DIR_DADOS, "ruas_rj_com_renda.parquet")
+
 REDIS_URL       = os.getenv("REDIS_URL", "redis://localhost:6379")
 REDIS_TTL_DIAS  = 30  # CEPs ficam em cache por 30 dias
+
+# ==============================================================================
+# LIFESPAN — carrega dados UMA vez na inicialização
+# ==============================================================================
 
 gdf_setores = None
 gdf_ruas    = None
@@ -26,6 +37,7 @@ async def lifespan(app: FastAPI):
 
     print(f"⏳ Iniciando API... Raiz do projeto: {BASE_DIR}")
 
+    # Redis
     try:
         redis_client = redis.from_url(REDIS_URL, decode_responses=True)
         redis_client.ping()
@@ -34,6 +46,7 @@ async def lifespan(app: FastAPI):
         print(f"   ⚠️ Redis indisponível — geocoding sem cache: {e}")
         redis_client = None
 
+    # Setores censitários
     if os.path.exists(ARQUIVO_SETORES):
         try:
             gdf_setores = gpd.read_parquet(ARQUIVO_SETORES)
@@ -59,12 +72,22 @@ async def lifespan(app: FastAPI):
     yield  # A API roda aqui
     print("🛑 Encerrando API.")
 
+
+# ==============================================================================
+# APP
+# ==============================================================================
+
 app = FastAPI(
-    title="GeoMarketing API",
+    title="GeoMarketing RJ",
     version="3.0",
-    description="Inteligência geoespacial socioeconômica.",
+    description="Inteligência geoespacial socioeconômica para o município do Rio de Janeiro.",
     lifespan=lifespan,
 )
+
+
+# ==============================================================================
+# HELPERS
+# ==============================================================================
 
 def _limpar_cep(cep: str) -> str:
     """Remove traços e espaços do CEP."""
@@ -112,8 +135,9 @@ def _salvar_coordenadas_cache(cep: str, dados: dict) -> None:
 async def _geocodificar_cep(cep: str) -> dict:
     """
     Converte CEP em coordenadas geográficas.
-    Fluxo: Cache Redis → ViaCEP (endereço) → Nominatim (lat/lng)
+    Fluxo: Cache Redis → ViaCEP (endereço) → Nominatim (geometria exata)
     """
+    # 1. Cache
     cache = _buscar_coordenadas_cache(cep)
     if cache:
         cache["fonte"] = "cache"
@@ -121,6 +145,7 @@ async def _geocodificar_cep(cep: str) -> dict:
 
     async with httpx.AsyncClient(timeout=10.0) as client:
 
+        # 2. ViaCEP → endereço
         try:
             resp = await client.get(f"https://viacep.com.br/ws/{cep}/json/")
             resp.raise_for_status()
@@ -136,12 +161,18 @@ async def _geocodificar_cep(cep: str) -> dict:
         cidade     = dados_cep.get("localidade", "Rio de Janeiro")
         estado     = dados_cep.get("uf", "RJ")
 
+        # 3. Nominatim → geometria completa (polygon_geojson=1)
         query = f"{logradouro}, {bairro}, {cidade}, {estado}, Brasil"
         headers = {"User-Agent": "geomarketing-rj/3.0"}
         try:
             resp = await client.get(
                 "https://nominatim.openstreetmap.org/search",
-                params={"q": query, "format": "json", "limit": 1},
+                params={
+                    "q":              query,
+                    "format":         "json",
+                    "limit":          1,
+                    "polygon_geojson": 1,   # pede geometria completa
+                },
                 headers=headers,
             )
             resp.raise_for_status()
@@ -155,25 +186,42 @@ async def _geocodificar_cep(cep: str) -> dict:
                 detail=f"Não foi possível geocodificar o CEP {cep}.",
             )
 
-        lat = float(resultados[0]["lat"])
-        lng = float(resultados[0]["lon"])
+        hit = resultados[0]
+
+        geojson_geom = hit.get("geojson", {})
+        tipo_geom    = geojson_geom.get("type", "")
+
+        # Extrai geometria completa para o cálculo e o centroide apenas para a câmera do mapa
+        if tipo_geom in ("LineString", "MultiLineString", "Polygon", "MultiPolygon"):
+            geom   = shape(geojson_geom)
+            centro = geom.centroid
+            lat    = centro.y
+            lng    = centro.x
+        else:
+            # Fallback forçado para Point caso o OSM só tenha um nó
+            lat = float(hit["lat"])
+            lng = float(hit["lon"])
+            geojson_geom = {"type": "Point", "coordinates": [lng, lat]}
+            tipo_geom = "Point"
 
     resultado = {
-        "cep": cep,
-        "logradouro": logradouro,
-        "bairro": bairro,
-        "cidade": cidade,
-        "estado": estado,
-        "latitude": lat,
-        "longitude": lng,
-        "fonte": "api",
+        "cep":            cep,
+        "logradouro":     logradouro,
+        "bairro":         bairro,
+        "cidade":         cidade,
+        "estado":         estado,
+        "latitude":       lat,  # Serve apenas para centralizar a câmera no frontend
+        "longitude":      lng,  # Serve apenas para centralizar a câmera no frontend
+        "geometria":      geojson_geom, # <-- GEOMETRIA COMPLETA SALVA AQUI
+        "geometria_tipo": tipo_geom,
+        "fonte":          "api",
     }
 
     _salvar_coordenadas_cache(cep, resultado)
     return resultado
 
 
-BUFFER_METROS = 50  # raio de busca ao redor do ponto geocodificado
+BUFFER_METROS = 50  # raio de busca ao redor da linha ou ponto geocodificado
 
 
 def _consultar_setor(lat: float, lng: float) -> dict | None:
@@ -195,19 +243,32 @@ def _consultar_setor(lat: float, lng: float) -> dict | None:
     }
 
 
-def _consultar_setores_por_buffer(lat: float, lng: float) -> list[dict]:
+def _consultar_setores_por_buffer(geometria_geojson: dict) -> list[dict]:
     """
-    Retorna todos os setores censitários num raio de BUFFER_METROS ao redor do ponto.
-    Resolve o caso de CEPs que cobrem múltiplos setores (ex: ruas longas).
+    Retorna todos os setores censitários que tocam o buffer da geometria da rua.
+    Resolve o caso de CEPs longos transformando a LineString num polígono e intersecionando.
     """
-    ponto = gpd.GeoDataFrame(geometry=[Point(lng, lat)], crs="EPSG:4326")
-    ponto = ponto.to_crs(gdf_setores.crs)
-    buffer = gpd.GeoDataFrame(geometry=ponto.buffer(BUFFER_METROS), crs=gdf_setores.crs)
-    resultado = gpd.sjoin(buffer, gdf_setores, how="left", predicate="intersects")
+    # 1. Transforma o dict GeoJSON em objeto Shapely (LineString ou Point)
+    geom_shapely = shape(geometria_geojson)
+    
+    # 2. Cria o GeoDataFrame a partir da geometria original em EPSG:4326
+    gdf_geom = gpd.GeoDataFrame(geometry=[geom_shapely], crs="EPSG:4326")
+    
+    # 3. Converte para o CRS dos setores (geralmente UTM/Mercator - metros)
+    gdf_geom = gdf_geom.to_crs(gdf_setores.crs)
+
+    # 4. Cria o Buffer em metros. Se for Point vira círculo. Se for LineString, vira a "salsicha".
+    buffer_geom = gpd.GeoDataFrame(geometry=gdf_geom.buffer(BUFFER_METROS), crs=gdf_setores.crs)
+
+    # 5. Spatial Join (cruza o buffer com o grid do IBGE)
+    resultado = gpd.sjoin(buffer_geom, gdf_setores, how="left", predicate="intersects")
     resultado = resultado.dropna(subset=["renda_media"])
 
     if resultado.empty:
         return []
+
+    # Remove possíveis duplicatas caso o buffer toque o mesmo setor mais de uma vez
+    resultado = resultado.drop_duplicates(subset=["code_tract"])
 
     setores = []
     for _, dado in resultado.iterrows():
@@ -229,9 +290,15 @@ def _setores_para_geojson(code_tracts: list[str]) -> dict:
     filtro = gdf_setores[gdf_setores["code_tract"].isin(code_tracts)]
     if filtro.empty:
         return {"type": "FeatureCollection", "features": []}
+    # Simplifica geometria antes de serializar — reduz tamanho do GeoJSON
+    filtro = filtro.copy()
+    filtro["geometry"] = filtro.geometry.simplify(tolerance=10, preserve_topology=True)
     return json.loads(filtro.to_crs(epsg=4326).to_json())
 
+
+# ==============================================================================
 # ENDPOINTS
+# ==============================================================================
 
 @app.get("/", summary="Status da API")
 def home():
@@ -253,10 +320,8 @@ def home():
 @app.get("/renda/cep/{cep}", summary="Consulta renda por CEP")
 async def consultar_cep(cep: str):
     """
-    Recebe um CEP (com ou sem traço), geocodifica e retorna os dados
-    socioeconômicos de todos os setores censitários num raio de 200m.
-    Inclui o GeoJSON dos polígonos para renderização direta no mapa.
-    Cache Redis de 30 dias para geocoding.
+    Recebe um CEP, geocodifica buscando a extensão da rua e retorna os dados
+    socioeconômicos dos setores censitários englobados por ela.
     """
     cep_limpo = _limpar_cep(cep)
     if len(cep_limpo) != 8:
@@ -268,8 +333,8 @@ async def consultar_cep(cep: str):
     # Geocoding (com cache)
     geo = await _geocodificar_cep(cep_limpo)
 
-    # Busca todos os setores no raio
-    setores = _consultar_setores_por_buffer(geo["latitude"], geo["longitude"])
+    # Busca todos os setores no raio passando a GEOMETRIA COMPLETA
+    setores = _consultar_setores_por_buffer(geo["geometria"])
 
     if not setores:
         return {
@@ -279,27 +344,30 @@ async def consultar_cep(cep: str):
         }
 
     rendas = [s["renda_media"] for s in setores]
+    renda_mediana = statistics.median(rendas)
     code_tracts = [s["setor_censitario"] for s in setores]
 
     return {
         "cep": cep_limpo,
         "endereco": {
-            "logradouro": geo["logradouro"],
-            "bairro":     geo["bairro"],
-            "cidade":     geo["cidade"],
-            "estado":     geo["estado"],
-            "latitude":   geo["latitude"],
-            "longitude":  geo["longitude"],
+            "logradouro":     geo["logradouro"],
+            "bairro":         geo["bairro"],
+            "cidade":         geo["cidade"],
+            "estado":         geo["estado"],
+            "latitude":       geo["latitude"],
+            "longitude":      geo["longitude"],
+            "geometria":      geo["geometria"],      # Repassa pro frontend desenhar a rua
+            "geometria_tipo": geo["geometria_tipo"],
         },
         "resumo": {
             "total_setores":           len(setores),
+            "renda_mediana":           round(renda_mediana, 2), # <--- NOVO NÚMERO PRINCIPAL
             "renda_media_minima":      round(min(rendas), 2),
             "renda_media_maxima":      round(max(rendas), 2),
-            "renda_media_area":        round(sum(rendas) / len(rendas), 2),
-            "classe_predominante":     _classificar_renda(sum(rendas) / len(rendas)),
+            "classe_predominante":     _classificar_renda(renda_mediana), # Classifica baseado na mediana
         },
         "setores":  setores,
-        "geojson":  _setores_para_geojson(code_tracts),
+        "geojson":  _setores_para_geojson(code_tracts), # Polígonos dos setores
         "fonte_geocoding": geo["fonte"],
     }
 
