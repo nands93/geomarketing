@@ -49,6 +49,12 @@ run: install redis
 	@echo "🚀 API disponível em http://127.0.0.1:8000"
 	@echo "📖 Docs em http://127.0.0.1:8000/docs"
 	@REDIS_URL=redis://localhost:$(REDIS_PORT) \
+		ALLOWED_ESTADOS=RJ,SP \
+		ENFORCE_ALLOWED_ESTADOS=1 \
+		RATE_LIMIT_ENABLED=1 \
+		RATE_LIMIT_WINDOW_SECONDS=60 \
+		RATE_LIMIT_MAX_REQUESTS=30 \
+		RATE_LIMIT_PATH_PREFIXES=/renda/cep,/renda/ponto \
 		$(UVICORN) $(APP_MODULE) --host 0.0.0.0 --port 8000 --reload
 
 test: install

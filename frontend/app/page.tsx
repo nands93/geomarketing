@@ -41,10 +41,24 @@ interface Setor {
 interface ResultadoCEP {
   cep: string;
   endereco: Endereco;
+  mensagem?: string;
   resumo: Resumo;
   setores: Setor[];
   geojson: object;
   fonte_geocoding: string;
+  qualidade: {
+    geocoding_score: number;
+    confianca_geocoding: "alta" | "media" | "baixa";
+    confianca_estimativa: "alta" | "media" | "baixa";
+    geometria_tipo: string;
+    total_setores: number;
+  };
+  metadados: {
+    dataset_version: string;
+    censo_ano: number;
+    base_setores_atualizada_em?: string | null;
+    base_ruas_atualizada_em?: string | null;
+  };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -68,6 +82,49 @@ const CLASSE_COR: Record<string, string> = {
   C:     "#f5a623",
   "D/E": "#e05c5c",
 };
+
+const CONFIANCA_COR: Record<"alta" | "media" | "baixa", string> = {
+  alta: "#00e5b0",
+  media: "#f5a623",
+  baixa: "#e05c5c",
+};
+
+function capitalizar(txt: string) {
+  return txt.charAt(0).toUpperCase() + txt.slice(1);
+}
+
+function formatarDataHora(valor?: string | null) {
+  if (!valor) return "não informado";
+  const dt = new Date(valor);
+  if (Number.isNaN(dt.getTime())) return "não informado";
+  return dt.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function mensagemConfianca(
+  confianca: "alta" | "media" | "baixa",
+  totalSetores: number,
+  geometriaTipo: string
+) {
+  if (confianca === "alta") {
+    return "Boa cobertura espacial para a estimativa neste endereço.";
+  }
+  if (confianca === "media") {
+    return "Estimativa útil para triagem inicial, mas recomenda validação local.";
+  }
+  if (geometriaTipo === "Point") {
+    return "A geocodificação veio como ponto, o que reduz a precisão da área de influência.";
+  }
+  if (totalSetores <= 1) {
+    return "Poucos setores foram capturados no entorno, então a estimativa pode oscilar.";
+  }
+  return "Confiabilidade baixa; use como sinal exploratório e confirme com outras fontes.";
+}
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
@@ -305,6 +362,94 @@ export default function Home() {
                     por domicílio / mês
                   </p>
                 )}
+              </div>
+
+              <div style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+                marginBottom: 14,
+              }}>
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: CONFIANCA_COR[resultado.qualidade.confianca_geocoding],
+                  background: "rgba(255,255,255,0.08)",
+                  border: `1px solid ${CONFIANCA_COR[resultado.qualidade.confianca_geocoding]}`,
+                  padding: "4px 8px",
+                  borderRadius: 999,
+                }}>
+                  Confiança do endereço: {capitalizar(resultado.qualidade.confianca_geocoding)}
+                </span>
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: CONFIANCA_COR[resultado.qualidade.confianca_estimativa],
+                  background: "rgba(255,255,255,0.08)",
+                  border: `1px solid ${CONFIANCA_COR[resultado.qualidade.confianca_estimativa]}`,
+                  padding: "4px 8px",
+                  borderRadius: 999,
+                }}>
+                  Estimativa: {capitalizar(resultado.qualidade.confianca_estimativa)}
+                </span>
+              </div>
+
+              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", marginBottom: 12, letterSpacing: "-0.1px" }}>
+                Score de confiança: {resultado.qualidade.geocoding_score.toFixed(1)} · Geometria: {resultado.qualidade.geometria_tipo}
+              </p>
+
+              <div style={{
+                border: "1px solid rgba(255,255,255,0.14)",
+                borderRadius: 10,
+                padding: "12px 14px",
+                background: "rgba(255,255,255,0.04)",
+                marginBottom: 14,
+              }}>
+                <p style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "rgba(255,255,255,0.7)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  marginBottom: 6,
+                }}>
+                  Como interpretar
+                </p>
+                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.68)", lineHeight: 1.45, marginBottom: 6 }}>
+                  Esta renda é uma estimativa baseada nos setores censitários que intersectam a área da via geocodificada.
+                </p>
+                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.68)", lineHeight: 1.45 }}>
+                  {mensagemConfianca(
+                    resultado.qualidade.confianca_estimativa,
+                    resultado.qualidade.total_setores,
+                    resultado.qualidade.geometria_tipo
+                  )}
+                </p>
+              </div>
+
+              <div style={{
+                border: "1px solid rgba(255,255,255,0.14)",
+                borderRadius: 10,
+                padding: "12px 14px",
+                background: "rgba(255,255,255,0.04)",
+                marginBottom: 14,
+              }}>
+                <p style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "rgba(255,255,255,0.7)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  marginBottom: 6,
+                }}>
+                  Transparência dos dados
+                </p>
+                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.68)", lineHeight: 1.45 }}>
+                  Versão: {resultado.metadados.dataset_version} · Censo: {resultado.metadados.censo_ano}
+                </p>
+                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.68)", lineHeight: 1.45 }}>
+                  Base de setores atualizada em: {formatarDataHora(resultado.metadados.base_setores_atualizada_em)}
+                </p>
               </div>
 
               <div style={{

@@ -6,8 +6,15 @@ services:
     restart: unless-stopped
     environment:
       - REDIS_URL=redis://redis:6379
+      - DATA_DIR=/app/dados_processados
+      - ALLOWED_ESTADOS=RJ,SP
+      - ENFORCE_ALLOWED_ESTADOS=1
+      - RATE_LIMIT_ENABLED=1
+      - RATE_LIMIT_WINDOW_SECONDS=60
+      - RATE_LIMIT_MAX_REQUESTS=30
+      - RATE_LIMIT_PATH_PREFIXES=/renda/cep,/renda/ponto
     volumes:
-      - ./dados_processados:/dados_processados:ro 
+      - ./dados_processados:/app/dados_processados:ro
     depends_on:
       redis:
         condition: service_healthy

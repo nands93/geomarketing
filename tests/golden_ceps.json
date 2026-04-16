@@ -1,0 +1,99 @@
+[
+  {
+    "id": "rj_mediana_com_3_setores",
+    "cep_input": "22071-100",
+    "geocoding": {
+      "cep": "22071100",
+      "logradouro": "Rua Exemplo",
+      "bairro": "Copacabana",
+      "cidade": "Rio de Janeiro",
+      "estado": "RJ",
+      "latitude": -22.97,
+      "longitude": -43.18,
+      "geometria": {"type": "Point", "coordinates": [-43.18, -22.97]},
+      "geometria_tipo": "Point",
+      "geocoding_score": 61.4,
+      "confianca_geocoding": "media",
+      "fonte": "api"
+    },
+    "setores_renda": [3000.0, 5000.0, 9000.0],
+    "expected": {
+      "status_code": 200,
+      "renda_mediana": 5000.0,
+      "confianca_geocoding": "media",
+      "confianca_estimativa": "media"
+    }
+  },
+  {
+    "id": "sp_alta_confianca_com_5_setores",
+    "cep_input": "01001-000",
+    "geocoding": {
+      "cep": "01001000",
+      "logradouro": "Praça da Sé",
+      "bairro": "Sé",
+      "cidade": "São Paulo",
+      "estado": "SP",
+      "latitude": -23.5505,
+      "longitude": -46.6333,
+      "geometria": {"type": "LineString", "coordinates": [[-46.6333, -23.5505], [-46.6328, -23.5501]]},
+      "geometria_tipo": "LineString",
+      "geocoding_score": 82.7,
+      "confianca_geocoding": "alta",
+      "fonte": "api"
+    },
+    "setores_renda": [4200.0, 4600.0, 5000.0, 5400.0, 5800.0],
+    "expected": {
+      "status_code": 200,
+      "renda_mediana": 5000.0,
+      "confianca_geocoding": "alta",
+      "confianca_estimativa": "alta"
+    }
+  },
+  {
+    "id": "rj_sem_setores",
+    "cep_input": "22071100",
+    "geocoding": {
+      "cep": "22071100",
+      "logradouro": "Rua Exemplo",
+      "bairro": "Copacabana",
+      "cidade": "Rio de Janeiro",
+      "estado": "RJ",
+      "latitude": -22.97,
+      "longitude": -43.18,
+      "geometria": {"type": "Point", "coordinates": [-43.18, -22.97]},
+      "geometria_tipo": "Point",
+      "geocoding_score": 48.2,
+      "confianca_geocoding": "baixa",
+      "fonte": "cache"
+    },
+    "setores_renda": [],
+    "expected": {
+      "status_code": 200,
+      "confianca_geocoding": "baixa",
+      "confianca_estimativa": "baixa"
+    }
+  },
+  {
+    "id": "estado_fora_do_mvp",
+    "cep_input": "30140-071",
+    "geocoding": {
+      "cep": "30140071",
+      "logradouro": "Avenida Exemplo",
+      "bairro": "Centro",
+      "cidade": "Belo Horizonte",
+      "estado": "MG",
+      "latitude": -19.9245,
+      "longitude": -43.9352,
+      "geometria": {"type": "Point", "coordinates": [-43.9352, -19.9245]},
+      "geometria_tipo": "Point",
+      "geocoding_score": 70.0,
+      "confianca_geocoding": "media",
+      "fonte": "api"
+    },
+    "setores_renda": [5000.0],
+    "expected": {
+      "status_code": 422,
+      "detail_contains": "RJ, SP"
+    }
+  }
+]
